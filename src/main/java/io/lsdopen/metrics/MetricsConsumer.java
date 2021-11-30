@@ -14,7 +14,8 @@ import javax.jms.JMSException;
 import javax.jms.Message;
 import javax.jms.Session;
 
-import org.jboss.logging.Logger;
+//import org.jboss.logging.Logger;
+import io.quarkus.logging.Log;
 
 import org.eclipse.microprofile.config.inject.ConfigProperty;
 
@@ -30,7 +31,7 @@ public class MetricsConsumer implements Runnable {
     @Inject
     ConnectionFactory connectionFactory;
 
-    private static final Logger LOG = Logger.getLogger(MetricsConsumer.class);
+    // private static final Logger LOG = Logger.getLogger(MetricsConsumer.class);
 
     private final ScheduledExecutorService scheduler = Executors.newSingleThreadScheduledExecutor();
 
@@ -43,7 +44,8 @@ public class MetricsConsumer implements Runnable {
         return metrics;
     }
 
-    void onStart(@Observes StartupEvent ev) {
+    void onStart(@Observes StartupEvent ev) throws Exception {
+
         System.out.println("Starting top read messages.");
         scheduler.scheduleWithFixedDelay(this, 0L, 5L, TimeUnit.SECONDS);
     }
@@ -56,11 +58,12 @@ public class MetricsConsumer implements Runnable {
     public void run() {
         try (JMSContext context = connectionFactory.createContext(Session.AUTO_ACKNOWLEDGE)) {
             JMSConsumer consumer = context.createConsumer(context.createQueue(productLineMetricsQueueName));
-
+            Log.debug("\nStarting mainloop");
             while (true) {
                 Message messagePayload = consumer.receive();
-                LOG.debug("Received metrics payload");
-                if (messagePayload == null) return;
+                Log.debug("\nMessage Received");
+                if (messagePayload == null)
+                    return;
                 metrics = messagePayload.getBody(String.class);
             }
         } catch (JMSException e) {
