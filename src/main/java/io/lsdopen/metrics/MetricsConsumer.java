@@ -1,8 +1,7 @@
 package io.lsdopen.metrics;
 
+import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
-import java.util.concurrent.ScheduledExecutorService;
-import java.util.concurrent.TimeUnit;
 
 import javax.enterprise.context.ApplicationScoped;
 import javax.enterprise.event.Observes;
@@ -13,8 +12,6 @@ import javax.jms.JMSContext;
 import javax.jms.JMSException;
 import javax.jms.Message;
 import javax.jms.Session;
-
-import org.jboss.logging.Logger;
 
 import org.eclipse.microprofile.config.inject.ConfigProperty;
 
@@ -30,9 +27,7 @@ public class MetricsConsumer implements Runnable {
     @Inject
     ConnectionFactory connectionFactory;
 
-    private static final Logger LOG = Logger.getLogger(MetricsConsumer.class);
-
-    private final ScheduledExecutorService scheduler = Executors.newSingleThreadScheduledExecutor();
+    private final ExecutorService scheduler = Executors.newSingleThreadExecutor();
 
     private volatile String metrics;
 
@@ -44,8 +39,7 @@ public class MetricsConsumer implements Runnable {
     }
 
     void onStart(@Observes StartupEvent ev) {
-        System.out.println("Starting top read messages.");
-        scheduler.scheduleWithFixedDelay(this, 0L, 5L, TimeUnit.SECONDS);
+        scheduler.submit(this);
     }
 
     void onStop(@Observes ShutdownEvent ev) {
@@ -54,14 +48,16 @@ public class MetricsConsumer implements Runnable {
 
     @Override
     public void run() {
+        System.out.println("Starting to consume metrics.");
         try (JMSContext context = connectionFactory.createContext(Session.AUTO_ACKNOWLEDGE)) {
             JMSConsumer consumer = context.createConsumer(context.createQueue(productLineMetricsQueueName));
 
             while (true) {
                 Message messagePayload = consumer.receive();
-                LOG.debug("Received metrics payload");
+                System.out.println("Receving messages payload.");
                 if (messagePayload == null) return;
                 metrics = messagePayload.getBody(String.class);
+                System.out.println(metrics);
             }
         } catch (JMSException e) {
             throw new RuntimeException(e);
