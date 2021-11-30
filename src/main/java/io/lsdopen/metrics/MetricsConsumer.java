@@ -1,5 +1,9 @@
 package io.lsdopen.metrics;
 
+import java.util.Map;
+import java.util.TreeMap;
+import java.util.UUID;
+
 import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.TimeUnit;
@@ -22,6 +26,12 @@ import org.eclipse.microprofile.config.inject.ConfigProperty;
 import io.quarkus.runtime.ShutdownEvent;
 import io.quarkus.runtime.StartupEvent;
 
+import io.qiot.manufacturing.all.commons.domain.production.ProductionChainStageEnum;
+import io.lsdopen.metrics.MetricsConsumerDTO;
+
+//import com.fasterxml.jackson.core.JsonProcessingException;
+import com.fasterxml.jackson.databind.ObjectMapper;
+
 /**
  * A bean consuming metrics from the JMS queue.
  */
@@ -31,7 +41,8 @@ public class MetricsConsumer implements Runnable {
     @Inject
     ConnectionFactory connectionFactory;
 
-    // private static final Logger LOG = Logger.getLogger(MetricsConsumer.class);
+    @Inject
+    ObjectMapper MAPPER;
 
     private final ScheduledExecutorService scheduler = Executors.newSingleThreadScheduledExecutor();
 
@@ -45,6 +56,16 @@ public class MetricsConsumer implements Runnable {
 
     @ConfigProperty(name = "qiot.productline.metrics.queue-prefix")
     String productLineMetricsQueueName;
+
+    private final Map<UUID, MetricsConsumerDTO> productionCounters;
+
+    public MetricsConsumer() {
+        productionCounters = new TreeMap<UUID, MetricsConsumerDTO>();
+    }
+
+    public Map<UUID, MetricsConsumerDTO> getCounters() {
+        return productionCounters;
+    }
 
     public String getMetrics() {
         return metrics;
@@ -77,6 +98,7 @@ public class MetricsConsumer implements Runnable {
 
                 String messagePayload = metricsMessage.getBody(String.class);
                 Log.debugf("\nmessagePayload read from metricsMessage %s\n", messagePayload);
+                MAPPER.readValue(messagePayload, productionCounters)
 
             } catch (JMSException e) {
                 throw new RuntimeException(e);
