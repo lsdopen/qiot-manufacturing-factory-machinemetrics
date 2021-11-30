@@ -12,9 +12,9 @@ import javax.jms.JMSConsumer;
 import javax.jms.JMSContext;
 import javax.jms.JMSException;
 import javax.jms.Message;
+import javax.jms.Queue;
 import javax.jms.Session;
 
-//import org.jboss.logging.Logger;
 import io.quarkus.logging.Log;
 
 import org.eclipse.microprofile.config.inject.ConfigProperty;
@@ -37,6 +37,12 @@ public class MetricsConsumer implements Runnable {
 
     private volatile String metrics;
 
+    private JMSContext context;
+
+    private JMSConsumer consumer;
+
+    private Queue queue;
+
     @ConfigProperty(name = "qiot.productline.metrics.queue-prefix")
     String productLineMetricsQueueName;
 
@@ -45,6 +51,10 @@ public class MetricsConsumer implements Runnable {
     }
 
     void onStart(@Observes StartupEvent ev) throws Exception {
+
+        context = connectionFactory.createContext(Session.AUTO_ACKNOWLEDGE);
+        queue = context.createQueue(productLineMetricsQueueName);
+        consumer = context.createConsumer(queue);
 
         System.out.println("Starting top read messages.");
         scheduler.scheduleWithFixedDelay(this, 0L, 5L, TimeUnit.SECONDS);
@@ -56,18 +66,22 @@ public class MetricsConsumer implements Runnable {
 
     @Override
     public void run() {
-        try (JMSContext context = connectionFactory.createContext(Session.AUTO_ACKNOWLEDGE)) {
-            JMSConsumer consumer = context.createConsumer(context.createQueue(productLineMetricsQueueName));
-            Log.debug("\nStarting mainloop");
-            while (true) {
-                Message messagePayload = consumer.receive();
-                Log.debug("\nMessage Received");
-                if (messagePayload == null)
-                    return;
-                metrics = messagePayload.getBody(String.class);
+
+        Log.debug("\nStarting mainloop");
+
+        while (true) {
+
+            Message metricsMessage = consumer.receive();
+
+            try {
+
+                String messagePayload = metricsMessage.getBody(String.class);
+                Log.debugf("\nmessagePayload read from metricsMessage %s\n", messagePayload);
+
+            } catch (JMSException e) {
+                throw new RuntimeException(e);
             }
-        } catch (JMSException e) {
-            throw new RuntimeException(e);
         }
     }
+
 }
