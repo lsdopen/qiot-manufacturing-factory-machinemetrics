@@ -1,7 +1,8 @@
 package io.lsdopen.metrics;
 
-import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
+import java.util.concurrent.ScheduledExecutorService;
+import java.util.concurrent.TimeUnit;
 
 import javax.enterprise.context.ApplicationScoped;
 import javax.enterprise.event.Observes;
@@ -11,7 +12,10 @@ import javax.jms.JMSConsumer;
 import javax.jms.JMSContext;
 import javax.jms.JMSException;
 import javax.jms.Message;
+import javax.jms.Queue;
 import javax.jms.Session;
+
+import io.quarkus.logging.Log;
 
 import org.eclipse.microprofile.config.inject.ConfigProperty;
 
@@ -27,9 +31,17 @@ public class MetricsConsumer implements Runnable {
     @Inject
     ConnectionFactory connectionFactory;
 
-    private final ExecutorService scheduler = Executors.newSingleThreadExecutor();
+    // private static final Logger LOG = Logger.getLogger(MetricsConsumer.class);
+
+    private final ScheduledExecutorService scheduler = Executors.newSingleThreadScheduledExecutor();
 
     private volatile String metrics;
+
+    private JMSContext context;
+
+    private JMSConsumer consumer;
+
+    private Queue queue;
 
     @ConfigProperty(name = "qiot.productline.metrics.queue-prefix")
     String productLineMetricsQueueName;
@@ -38,8 +50,14 @@ public class MetricsConsumer implements Runnable {
         return metrics;
     }
 
-    void onStart(@Observes StartupEvent ev) {
-        scheduler.submit(this);
+    void onStart(@Observes StartupEvent ev) throws Exception {
+
+        context = connectionFactory.createContext(Session.AUTO_ACKNOWLEDGE);
+        queue = context.createQueue(productLineMetricsQueueName);
+        consumer = context.createConsumer(queue);
+
+        System.out.println("Starting top read messages.");
+        scheduler.scheduleWithFixedDelay(this, 0L, 5L, TimeUnit.SECONDS);
     }
 
     void onStop(@Observes ShutdownEvent ev) {
@@ -48,19 +66,22 @@ public class MetricsConsumer implements Runnable {
 
     @Override
     public void run() {
-        System.out.println("Starting to consume metrics.");
-        try (JMSContext context = connectionFactory.createContext(Session.AUTO_ACKNOWLEDGE)) {
-            JMSConsumer consumer = context.createConsumer(context.createQueue(productLineMetricsQueueName));
 
-            while (true) {
-                Message messagePayload = consumer.receive();
-                System.out.println("Receving messages payload.");
-                if (messagePayload == null) return;
-                metrics = messagePayload.getBody(String.class);
-                System.out.println(metrics);
+        Log.debug("\nStarting mainloop");
+
+        while (true) {
+
+            Message metricsMessage = consumer.receive();
+
+            try {
+
+                String messagePayload = metricsMessage.getBody(String.class);
+                Log.debugf("\nmessagePayload read from metricsMessage %s\n", messagePayload);
+
+            } catch (JMSException e) {
+                throw new RuntimeException(e);
             }
-        } catch (JMSException e) {
-            throw new RuntimeException(e);
         }
     }
+
 }
