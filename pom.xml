@@ -49,8 +49,20 @@
       <artifactId>quarkus-micrometer-registry-prometheus</artifactId>
     </dependency>
     <dependency>
-      <groupId>org.amqphub.quarkus</groupId>
-      <artifactId>quarkus-qpid-jms</artifactId>
+      <groupId>io.quarkus</groupId>
+      <artifactId>quarkus-artemis-jms</artifactId>
+    </dependency>
+    <dependency>
+      <groupId>io.quarkus</groupId>
+      <artifactId>quarkus-resteasy-jsonb</artifactId>
+    </dependency>
+    <dependency>
+      <groupId>io.quarkus</groupId>
+      <artifactId>quarkus-resteasy-jackson</artifactId>
+    </dependency>
+    <dependency>
+      <groupId>io.quarkus</groupId>
+      <artifactId>quarkus-rest-client-jackson</artifactId>
     </dependency>
     <dependency>
       <groupId>io.quarkus</groupId>
@@ -62,7 +74,30 @@
       <artifactId>rest-assured</artifactId>
       <scope>test</scope>
     </dependency>
+    <dependency>
+      <groupId>io.qiot.manufacturing.all</groupId>
+      <artifactId>domain-model</artifactId>
+      <version>1.0.3</version>
+    </dependency>
   </dependencies>
+  <repositories>
+    <repository>
+      <snapshots>
+        <enabled>false</enabled>
+      </snapshots>
+      <id>qiot-central</id>
+      <name>a0lz61zjcqpyh-artifactory-primary-0-releases</name>
+      <url>https://qiotproject.jfrog.io/artifactory/qiot-libs-release-local</url>
+    </repository>
+    <repository>
+      <releases>
+        <enabled>false</enabled>
+      </releases>
+      <id>qiot-snapshots</id>
+      <name>a0lz61zjcqpyh-artifactory-primary-0-snapshots</name>
+      <url>https://qiotproject.jfrog.io/artifactory/qiot-libs-snapshot-local</url>
+    </repository>
+  </repositories>
   <build>
     <plugins>
       <plugin>
