@@ -23,6 +23,7 @@ import javax.jms.Session;
 
 import io.micrometer.core.instrument.Counter;
 import io.micrometer.core.instrument.DistributionSummary;
+import io.micrometer.core.instrument.Gauge;
 import io.micrometer.core.instrument.MeterRegistry;
 import io.micrometer.core.instrument.Tag;
 import io.micrometer.core.instrument.Tags;
@@ -117,22 +118,8 @@ public class MetricsConsumer implements Runnable {
                     Map.Entry<String, JsonNode> productLine = (Map.Entry<String, JsonNode>) productionCounters.next();
 
                     JsonNode productLineCounter = productLine.getValue();
-                    int weavingValue = productLineCounter.get("stageCounters")
-                            .get(ProductionChainStageEnum.WEAVING.toString()).intValue();
-                    int coloringValue = productLineCounter.get("stageCounters")
-                            .get(ProductionChainStageEnum.COLORING.toString()).intValue();
-                    int printingValue = productLineCounter.get("stageCounters")
-                            .get(ProductionChainStageEnum.PRINTING.toString()).intValue();
-                    int packagingValue = productLineCounter.get("stageCounters")
-                            .get(ProductionChainStageEnum.PACKAGING.toString()).intValue();
-                    int weavingValidationValue = productLineCounter.get("waitingForValidationCounters")
-                            .get(ProductionChainStageEnum.WEAVING.toString()).intValue();
-                    int coloringValidationValue = productLineCounter.get("waitingForValidationCounters")
-                            .get(ProductionChainStageEnum.COLORING.toString()).intValue();
-                    int printingValidationValue = productLineCounter.get("waitingForValidationCounters")
-                            .get(ProductionChainStageEnum.PRINTING.toString()).intValue();
-                    int packagingValidationValue = productLineCounter.get("waitingForValidationCounters")
-                            .get(ProductionChainStageEnum.PACKAGING.toString()).intValue();
+                    JsonNode stageCounter = productLineCounter.get("stageCounters");
+                    JsonNode waitingForValidationCounters = productLineCounter.get("waitingForValidationCounters");
 
                     Tag productLineTag = Tag.of("productLine", productLineCounter.get("productLineId").textValue());
                     Iterable<Tag> productLineTags = Tags.of(productLineTag);
@@ -147,37 +134,48 @@ public class MetricsConsumer implements Runnable {
                             Tags.concat(tags, productLineTags));
                     discarded.increment(productLineCounter.get("discarded").intValue() - discarded.count());
 
-                    AtomicInteger weaving = registry.gauge("machinemetrics.weaving", Tags.concat(tags, productLineTags),
-                            new AtomicInteger(0));
-                    weaving.set(weavingValue);
+                    Gauge
+                        .builder("machinemetrics.weaving", stageCounter, c -> c.get(ProductionChainStageEnum.WEAVING.toString()).intValue())
+                        .strongReference(true)
+                        .tags(Tags.concat(tags, productLineTags)) // optional
+                        .register(registry);
+                    Gauge
+                        .builder("machinemetrics.coloring", stageCounter, c -> c.get(ProductionChainStageEnum.COLORING.toString()).intValue())
+                        .strongReference(true)
+                        .tags(Tags.concat(tags, productLineTags)) // optional
+                        .register(registry);
+                    Gauge
+                        .builder("machinemetrics.printing", stageCounter, c -> c.get(ProductionChainStageEnum.PRINTING.toString()).intValue())
+                        .strongReference(true)
+                        .tags(Tags.concat(tags, productLineTags)) // optional
+                        .register(registry);
+                    Gauge
+                        .builder("machinemetrics.packaging", stageCounter, c -> c.get(ProductionChainStageEnum.PACKAGING.toString()).intValue())
+                        .strongReference(true)
+                        .tags(Tags.concat(tags, productLineTags)) // optional
+                        .register(registry);
 
-                    AtomicInteger coloring = registry.gauge("machinemetrics.coloring",
-                            Tags.concat(tags, productLineTags), new AtomicInteger(0));
-                    coloring.set(coloringValue);
-
-                    AtomicInteger printing = registry.gauge("machinemetrics.printing",
-                            Tags.concat(tags, productLineTags), new AtomicInteger(0));
-                    printing.set(printingValue);
-
-                    AtomicInteger packaging = registry.gauge("machinemetrics.packaging",
-                            Tags.concat(tags, productLineTags), new AtomicInteger(0));
-                    packaging.set(packagingValue);
-
-                    AtomicInteger weavingValidation = registry.gauge("machinemetrics.waitingForValidation.weaving",
-                            Tags.concat(tags, productLineTags), new AtomicInteger(0));
-                    weavingValidation.set(weavingValidationValue);
-
-                    AtomicInteger coloringValidation = registry.gauge("machinemetrics.waitingForValidation.coloring",
-                            Tags.concat(tags, productLineTags), new AtomicInteger(0));
-                    coloringValidation.set(coloringValidationValue);
-
-                    AtomicInteger printingValidation = registry.gauge("machinemetrics.waitingForValidation.printing",
-                            Tags.concat(tags, productLineTags), new AtomicInteger(0));
-                    printingValidation.set(printingValidationValue);
-
-                    AtomicInteger packagingValidation = registry.gauge("machinemetrics.waitingForValidation.packaging",
-                            Tags.concat(tags, productLineTags), new AtomicInteger(0));
-                    packagingValidation.set(packagingValidationValue);
+                    
+                    Gauge
+                        .builder("machinemetrics.waitingForValidation.weaving", waitingForValidationCounters, c -> c.get(ProductionChainStageEnum.WEAVING.toString()).intValue())
+                        .strongReference(true)
+                        .tags(Tags.concat(tags, productLineTags)) // optional
+                        .register(registry);
+                    Gauge
+                        .builder("machinemetrics.waitingForValidation.coloring", waitingForValidationCounters, c -> c.get(ProductionChainStageEnum.COLORING.toString()).intValue())
+                        .strongReference(true)
+                        .tags(Tags.concat(tags, productLineTags)) // optional
+                        .register(registry);
+                    Gauge
+                        .builder("machinemetrics.waitingForValidation.printing", waitingForValidationCounters, c -> c.get(ProductionChainStageEnum.PRINTING.toString()).intValue())
+                        .strongReference(true)
+                        .tags(Tags.concat(tags, productLineTags)) // optional
+                        .register(registry);
+                    Gauge
+                        .builder("machinemetrics.waitingForValidation.packaging", waitingForValidationCounters, c -> c.get(ProductionChainStageEnum.PACKAGING.toString()).intValue())
+                        .strongReference(true)
+                        .tags(Tags.concat(tags, productLineTags)) // optional
+                        .register(registry);
                 }
 
             } catch (JsonMappingException e) {
