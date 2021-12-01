@@ -1,12 +1,14 @@
 package io.lsdopen.metrics;
 
+import java.util.ArrayList;
+import java.util.Iterator;
+import java.util.List;
 import java.util.Map;
-import java.util.TreeMap;
-import java.util.UUID;
-
+import java.util.Map.Entry;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicInteger;
 
 import javax.enterprise.context.ApplicationScoped;
 import javax.enterprise.event.Observes;
@@ -19,6 +21,11 @@ import javax.jms.Message;
 import javax.jms.Queue;
 import javax.jms.Session;
 
+import io.micrometer.core.instrument.Counter;
+import io.micrometer.core.instrument.DistributionSummary;
+import io.micrometer.core.instrument.MeterRegistry;
+import io.micrometer.core.instrument.Tag;
+import io.micrometer.core.instrument.Tags;
 import io.quarkus.logging.Log;
 
 import org.eclipse.microprofile.config.inject.ConfigProperty;
@@ -27,8 +34,10 @@ import io.quarkus.runtime.ShutdownEvent;
 import io.quarkus.runtime.StartupEvent;
 
 import io.qiot.manufacturing.all.commons.domain.production.ProductionChainStageEnum;
-import io.lsdopen.metrics.MetricsConsumerDTO;
 
+import com.fasterxml.jackson.core.JsonProcessingException;
+import com.fasterxml.jackson.databind.JsonMappingException;
+import com.fasterxml.jackson.databind.JsonNode;
 //import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 
@@ -44,9 +53,9 @@ public class MetricsConsumer implements Runnable {
     @Inject
     ObjectMapper MAPPER;
 
-    private final ScheduledExecutorService scheduler = Executors.newSingleThreadScheduledExecutor();
+    private final MeterRegistry registry;
 
-    private volatile String metrics;
+    private final ScheduledExecutorService scheduler = Executors.newSingleThreadScheduledExecutor();
 
     private JMSContext context;
 
@@ -57,18 +66,10 @@ public class MetricsConsumer implements Runnable {
     @ConfigProperty(name = "qiot.productline.metrics.queue-prefix")
     String productLineMetricsQueueName;
 
-    private final Map<UUID, MetricsConsumerDTO> productionCounters;
+    private JsonNode metrics;
 
-    public MetricsConsumer() {
-        productionCounters = new TreeMap<UUID, MetricsConsumerDTO>();
-    }
-
-    public Map<UUID, MetricsConsumerDTO> getCounters() {
-        return productionCounters;
-    }
-
-    public String getMetrics() {
-        return metrics;
+    MetricsConsumer(MeterRegistry registry) {
+        this.registry = registry;
     }
 
     void onStart(@Observes StartupEvent ev) throws Exception {
@@ -85,6 +86,10 @@ public class MetricsConsumer implements Runnable {
         scheduler.shutdown();
     }
 
+    public JsonNode getMetrics() {
+        return metrics;
+    }
+
     @Override
     public void run() {
 
@@ -97,9 +102,62 @@ public class MetricsConsumer implements Runnable {
             try {
 
                 String messagePayload = metricsMessage.getBody(String.class);
-                Log.debugf("\nmessagePayload read from metricsMessage %s\n", messagePayload);
-                MAPPER.readValue(messagePayload, productionCounters)
+                metrics= MAPPER.readTree(messagePayload);
 
+                Tag machineNameTag = Tag.of("machineName", metrics.get("machineName").textValue());
+                Tag machineSerialTag = Tag.of("machineSerial", metrics.get("machineSerial").textValue());
+                Iterable<Tag> tags = Tags.of(machineNameTag, machineSerialTag);
+
+                Iterator<Entry<String, JsonNode>> productionCounters = metrics.get("productionCounters").fields();
+
+                while (productionCounters.hasNext()) {
+                    Map.Entry<String, JsonNode> productLine = (Map.Entry<String, JsonNode>) productionCounters.next();
+
+                    JsonNode productLineCounter = productLine.getValue();
+
+                    Tag productLineTag = Tag.of("productLine", productLineCounter.get("productLineId").textValue());
+                    Iterable<Tag> productLineTags = Tags.of(productLineTag);
+
+                    Counter totalItems = registry.counter("machinemetrics.totalItems", Tags.concat(tags, productLineTags));
+                    totalItems.increment(productLineCounter.get("totalItems").intValue() - totalItems.count());
+                    Counter completed = registry.counter("machinemetrics.completed", Tags.concat(tags, productLineTags));
+                    completed.increment(productLineCounter.get("completed").intValue() - completed.count());
+                    Counter discarded = registry.counter("machinemetrics.discarded", Tags.concat(tags, productLineTags));
+                    discarded.increment(productLineCounter.get("discarded").intValue() - discarded.count());
+
+                    AtomicInteger weaving = registry.gauge("machinemetrics.weaving", Tags.concat(tags, productLineTags), new AtomicInteger(0));
+                    weaving.set(productLineCounter.get("stageCounters").get(ProductionChainStageEnum.WEAVING.toString()).intValue());
+
+                    AtomicInteger coloring = registry.gauge("machinemetrics.coloring", Tags.concat(tags, productLineTags), new AtomicInteger(0));
+                    coloring.set(productLineCounter.get("stageCounters").get(ProductionChainStageEnum.COLORING.toString()).intValue());
+
+                    AtomicInteger printing = registry.gauge("machinemetrics.printing", Tags.concat(tags, productLineTags), new AtomicInteger(0));
+                    printing.set(productLineCounter.get("stageCounters").get(ProductionChainStageEnum.PRINTING.toString()).intValue());
+
+                    AtomicInteger packaging = registry.gauge("machinemetrics.packaging", Tags.concat(tags, productLineTags), new AtomicInteger(0));
+                    packaging.set(productLineCounter.get("stageCounters").get(ProductionChainStageEnum.PACKAGING.toString()).intValue());
+
+                    AtomicInteger weavingValidation = registry.gauge("machinemetrics.waitingForValidation.weaving", Tags.concat(tags, productLineTags), new AtomicInteger(0));
+                    weavingValidation.set(productLineCounter.get("waitingForValidationCounters").get(ProductionChainStageEnum.WEAVING.toString()).intValue());
+
+                    AtomicInteger coloringValidation = registry.gauge("machinemetrics.waitingForValidation.coloring", Tags.concat(tags, productLineTags), new AtomicInteger(0));
+                    coloringValidation.set(productLineCounter.get("waitingForValidationCounters").get(ProductionChainStageEnum.COLORING.toString()).intValue());
+
+                    AtomicInteger printingValidation = registry.gauge("machinemetrics.waitingForValidation.printing", Tags.concat(tags, productLineTags), new AtomicInteger(0));
+                    printingValidation.set(productLineCounter.get("waitingForValidationCounters").get(ProductionChainStageEnum.PRINTING.toString()).intValue());
+
+                    AtomicInteger packagingValidation = registry.gauge("machinemetrics.waitingForValidation.packaging", Tags.concat(tags, productLineTags), new AtomicInteger(0));
+                    packagingValidation.set(productLineCounter.get("waitingForValidationCounters").get(ProductionChainStageEnum.PACKAGING.toString()).intValue());
+                }
+
+            } catch (JsonMappingException e) {
+                System.out.println("Mapping exception");
+                System.out.println(e.getCause());
+                throw new RuntimeException(e);
+            } catch (JsonProcessingException e) {
+                System.out.println("Processing exception");
+                System.out.println(e.getCause());
+                throw new RuntimeException(e);
             } catch (JMSException e) {
                 throw new RuntimeException(e);
             }
